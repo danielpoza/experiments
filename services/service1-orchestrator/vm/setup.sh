@@ -11,11 +11,13 @@ CAMERA_USER="${CAMERA_USER:-foscam}"
 CAMERA_PASSWORD="${CAMERA_PASSWORD:-Foscam123!}"  # cámbialo luego
 UPLOAD_DIR="/home/${CAMERA_USER}/uploads"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+VENV_DIR="/home/${CAMERA_USER}/venv"
 
 echo "[setup] Project:      ${PROJECT_ID}"
 echo "[setup] Bucket:       ${BUCKET_NAME}"
 echo "[setup] Camera user:  ${CAMERA_USER}"
 echo "[setup] Repo dir:     ${REPO_DIR}"
+echo "[setup] Venv dir:     ${VENV_DIR}"
 
 ########################################
 # Paquetes base
@@ -23,7 +25,7 @@ echo "[setup] Repo dir:     ${REPO_DIR}"
 
 echo "[setup] Instalando paquetes..."
 apt-get update -y
-apt-get install -y vsftpd python3 python3-pip
+apt-get install -y vsftpd python3 python3-venv
 
 ########################################
 # Usuario y carpeta para la cámara
@@ -54,11 +56,9 @@ chroot_local_user=YES
 allow_writeable_chroot=YES
 local_umask=022
 
-# Solo este usuario (cámara)
 user_sub_token=\$USER
 local_root=/home/\$USER/uploads
 
-# Modo pasivo para NAT
 pasv_enable=YES
 pasv_min_port=30000
 pasv_max_port=30010
@@ -72,12 +72,21 @@ systemctl enable vsftpd
 echo "[setup] vsftpd listo. Recibirá archivos en ${UPLOAD_DIR}"
 
 ########################################
-# Dependencias Python
+# Virtualenv para el orchestrator
 ########################################
 
-echo "[setup] Instalando librerías Python..."
-pip3 install --upgrade pip
-pip3 install google-cloud-storage watchdog
+echo "[setup] Creando virtualenv para ${CAMERA_USER}..."
+
+# Crear venv como el usuario foscam
+sudo -u "${CAMERA_USER}" bash <<EOF
+if [ ! -d "${VENV_DIR}" ]; then
+  python3 -m venv "${VENV_DIR}"
+fi
+"${VENV_DIR}/bin/pip" install --upgrade pip
+"${VENV_DIR}/bin/pip" install google-cloud-storage watchdog
+EOF
+
+echo "[setup] Virtualenv con dependencias instalado."
 
 ########################################
 # systemd service para orchestrator
@@ -96,7 +105,7 @@ Environment=PROJECT_ID=${PROJECT_ID}
 Environment=BUCKET_NAME=${BUCKET_NAME}
 Environment=CAMERA_ID=c2m-default
 WorkingDirectory=${REPO_DIR}/services/service1-orchestrator/vm
-ExecStart=/usr/bin/python3 ${REPO_DIR}/services/service1-orchestrator/vm/orchestrator.py
+ExecStart=${VENV_DIR}/bin/python ${REPO_DIR}/services/service1-orchestrator/vm/orchestrator.py
 Restart=always
 RestartSec=5
 
@@ -106,7 +115,7 @@ EOF
 
 systemctl daemon-reload
 systemctl enable foscam-orchestrator
-systemctl start foscam-orchestrator
+systemctl restart foscam-orchestrator
 
 echo "[setup] Servicio foscam-orchestrator activo."
 echo "[setup] Setup completo."
