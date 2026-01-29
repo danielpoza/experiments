@@ -11,11 +11,10 @@ import json
 from datetime import datetime
 from typing import Any, Sequence
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
+from mcp.types import Tool, TextContent
 import logging
 
 # Configurar logging
@@ -27,6 +26,11 @@ app = FastAPI(title="Service 3 - Notifier/MCP")
 
 # MCP Server
 mcp_server = Server("foscam-notifier")
+
+# Constantes
+MAX_HISTORY_SIZE = 1000
+MAX_LIMIT = 100
+VALID_CHANNELS = ["console", "whatsapp"]
 
 # Modelos de datos
 class ImageEvent(BaseModel):
@@ -41,10 +45,28 @@ class NotificationRequest(BaseModel):
     message: str = Field(..., description="Mensaje a enviar")
     channel: str = Field(default="console", description="Canal de notificación (console, whatsapp)")
     metadata: dict = Field(default_factory=dict, description="Metadatos adicionales")
+    
+    @field_validator('channel')
+    @classmethod
+    def validate_channel(cls, v: str) -> str:
+        if v not in VALID_CHANNELS:
+            raise ValueError(f"Channel must be one of {VALID_CHANNELS}")
+        return v
 
 # Almacenamiento en memoria (en producción usar base de datos)
+# Nota: Para producción considerar usar estructuras thread-safe o base de datos
 notifications_history = []
 recent_images = []
+
+def validate_limit(limit: int) -> int:
+    """Valida y normaliza el parámetro limit"""
+    if not isinstance(limit, int):
+        limit = int(limit)
+    if limit < 1:
+        return 1
+    if limit > MAX_LIMIT:
+        return MAX_LIMIT
+    return limit
 
 # ===== ENDPOINTS FASTAPI =====
 
@@ -73,7 +95,7 @@ async def process_event(event: ImageEvent):
     
     # Guardar en historial
     recent_images.append(event.model_dump())
-    if len(recent_images) > 100:
+    if len(recent_images) > MAX_HISTORY_SIZE:
         recent_images.pop(0)
     
     # Generar notificación si hay análisis relevante
@@ -85,6 +107,8 @@ async def process_event(event: ImageEvent):
             "metadata": event.model_dump()
         }
         notifications_history.append(notification)
+        if len(notifications_history) > MAX_HISTORY_SIZE:
+            notifications_history.pop(0)
         logger.info(f"Notificación generada: {notification['message']}")
     
     return {"status": "processed", "event_id": event.timestamp}
@@ -101,6 +125,8 @@ async def send_notification(request: NotificationRequest):
         "metadata": request.metadata
     }
     notifications_history.append(notification)
+    if len(notifications_history) > MAX_HISTORY_SIZE:
+        notifications_history.pop(0)
     logger.info(f"Notificación enviada: {notification}")
     
     return {"status": "sent", "notification": notification}
@@ -110,9 +136,10 @@ async def get_notifications(limit: int = 10):
     """
     Obtiene el historial de notificaciones.
     """
+    validated_limit = validate_limit(limit)
     return {
         "total": len(notifications_history),
-        "notifications": notifications_history[-limit:]
+        "notifications": notifications_history[-validated_limit:]
     }
 
 @app.get("/recent-images")
@@ -120,9 +147,10 @@ async def get_recent_images(limit: int = 10):
     """
     Obtiene las imágenes recientes procesadas.
     """
+    validated_limit = validate_limit(limit)
     return {
         "total": len(recent_images),
-        "images": recent_images[-limit:]
+        "images": recent_images[-validated_limit:]
     }
 
 # ===== MCP SERVER TOOLS =====
@@ -140,9 +168,11 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "limit": {
-                        "type": "number",
-                        "description": "Número máximo de imágenes a retornar",
-                        "default": 10
+                        "type": "integer",
+                        "description": "Número máximo de imágenes a retornar (1-100)",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 100
                     },
                     "camera_id": {
                         "type": "string",
@@ -158,9 +188,11 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "limit": {
-                        "type": "number",
-                        "description": "Número máximo de notificaciones a retornar",
-                        "default": 10
+                        "type": "integer",
+                        "description": "Número máximo de notificaciones a retornar (1-100)",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 100
                     }
                 }
             }
@@ -177,7 +209,8 @@ async def list_tools() -> list[Tool]:
                     },
                     "channel": {
                         "type": "string",
-                        "description": "Canal de notificación (console, whatsapp)",
+                        "description": "Canal de notificación",
+                        "enum": ["console", "whatsapp"],
                         "default": "console"
                     }
                 },
@@ -201,12 +234,15 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
     """
     try:
         if name == "get_recent_images":
-            limit = arguments.get("limit", 10)
+            limit = validate_limit(arguments.get("limit", 10))
             camera_id = arguments.get("camera_id")
             
-            images = recent_images[-limit:]
+            # Filtrar primero si se especifica camera_id, luego limitar
             if camera_id:
-                images = [img for img in images if img.get("camera_id") == camera_id]
+                filtered_images = [img for img in recent_images if img.get("camera_id") == camera_id]
+                images = filtered_images[-limit:]
+            else:
+                images = recent_images[-limit:]
             
             result = {
                 "total": len(images),
@@ -219,7 +255,7 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
             )]
         
         elif name == "get_notifications":
-            limit = arguments.get("limit", 10)
+            limit = validate_limit(arguments.get("limit", 10))
             
             result = {
                 "total": len(notifications_history),
@@ -241,6 +277,13 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
                     text="Error: Se requiere un mensaje"
                 )]
             
+            # Validar canal
+            if channel not in VALID_CHANNELS:
+                return [TextContent(
+                    type="text",
+                    text=f"Error: Canal inválido. Debe ser uno de {VALID_CHANNELS}"
+                )]
+            
             notification = {
                 "timestamp": datetime.now().isoformat(),
                 "message": message,
@@ -248,6 +291,8 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
                 "metadata": {"source": "mcp_tool"}
             }
             notifications_history.append(notification)
+            if len(notifications_history) > MAX_HISTORY_SIZE:
+                notifications_history.pop(0)
             
             return [TextContent(
                 type="text",
@@ -259,13 +304,20 @@ async def call_tool(name: str, arguments: dict) -> Sequence[TextContent]:
             camera_stats = {}
             for img in recent_images:
                 cam_id = img.get("camera_id", "unknown")
+                timestamp = img.get("timestamp")
+                
                 if cam_id not in camera_stats:
                     camera_stats[cam_id] = {
                         "camera_id": cam_id,
-                        "last_image": img.get("timestamp"),
+                        "last_image": timestamp,
                         "total_images": 0,
                         "alerts": 0
                     }
+                
+                # Actualizar último timestamp si es más reciente
+                if timestamp and (not camera_stats[cam_id]["last_image"] or timestamp > camera_stats[cam_id]["last_image"]):
+                    camera_stats[cam_id]["last_image"] = timestamp
+                
                 camera_stats[cam_id]["total_images"] += 1
                 if img.get("analysis", {}).get("alert", False):
                     camera_stats[cam_id]["alerts"] += 1
