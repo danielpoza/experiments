@@ -23,6 +23,19 @@ Servicio de notificaciones con soporte para MCP (Model Context Protocol) que per
 pip install -r requirements.txt
 ```
 
+### Verificar Configuración
+
+Ejecuta el script de verificación para asegurar que todo está configurado correctamente:
+
+```bash
+python verify_mcp_setup.py
+```
+
+Este script verificará:
+- Dependencias instaladas
+- Servidor FastAPI funcional
+- Modo MCP ejecutándose correctamente
+
 ### Ejecutar Servidor FastAPI
 
 ```bash
@@ -58,6 +71,8 @@ python -m app.main --mcp
 
 Ver `/docs/copilot-chat-integration.md` para instrucciones completas de configuración.
 
+Ver `/docs/copilot-usage-examples.md` para ejemplos de uso.
+
 Archivo de ejemplo: `config/mcp-server-config.example.json`
 
 ## Docker
@@ -87,6 +102,7 @@ service3-notifier/
 │   └── mcp-server-config.example.json
 ├── Dockerfile
 ├── requirements.txt
+├── verify_mcp_setup.py  # Script de verificación
 └── README.md
 ```
 
@@ -103,3 +119,10 @@ curl -X POST http://localhost:8080/send-notification \
   -H "Content-Type: application/json" \
   -d '{"message": "Test", "channel": "console"}'
 ```
+
+## Seguridad
+
+- Validación de entrada en todos los endpoints
+- Límites de historial para prevenir uso excesivo de memoria
+- Canal de notificaciones restringido a valores válidos
+- Dockerfile ejecuta como usuario no-root
