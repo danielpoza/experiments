@@ -7,3 +7,9 @@ Proyecto dividido en 3 servicios:
 3. service3-notifier: envía notificaciones (WhatsApp / MCP / otros).
 
 Ver `docs/architecture.md` para el diseño de alto nivel.
+
+## Integración con GitHub Copilot Chat
+
+El servicio 3 (notifier) incluye un servidor MCP que permite interactuar con la aplicación desde GitHub Copilot Chat.
+
+Ver `docs/copilot-chat-integration.md` para instrucciones de configuración y uso.

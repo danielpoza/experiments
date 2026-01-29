@@ -1,0 +1,117 @@
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   FOSCAM CAMERA MONITORING SYSTEM                        │
+│                    with GitHub Copilot Chat Integration                 │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────┐
+│  Foscam C2M  │
+│   Camera     │
+└──────┬───────┘
+       │ Images
+       ↓
+┌──────────────────────────┐
+│  Service 1: Orchestrator │
+│  - Receives images       │
+│  - Publishes to GCS      │
+│  - Emits events          │
+└──────────┬───────────────┘
+           │ Events
+           ↓
+┌──────────────────────────┐
+│  Service 2: Vision-IA    │
+│  - Processes images      │
+│  - AI analysis           │
+│  - Detects motion        │
+└──────────┬───────────────┘
+           │ Results
+           ↓
+┌────────────────────────────────────────┐
+│  Service 3: Notifier/MCP               │
+│  ┌──────────────────────────────────┐  │
+│  │  FastAPI Server (Production)     │  │
+│  │  - /process-event                │  │
+│  │  - /send-notification            │  │
+│  │  - /notifications                │  │
+│  │  - /recent-images                │  │
+│  └──────────────────────────────────┘  │
+│                                         │
+│  ┌──────────────────────────────────┐  │
+│  │  MCP Server (Copilot Chat)       │  │
+│  │  ┌────────────────────────────┐  │  │
+│  │  │  Tools:                    │  │  │
+│  │  │  • get_recent_images       │  │  │
+│  │  │  • get_notifications       │  │  │
+│  │  │  • send_notification       │  │  │
+│  │  │  • get_camera_status       │  │  │
+│  │  └────────────────────────────┘  │  │
+│  │  ┌────────────────────────────┐  │  │
+│  │  │  Resources:                │  │  │
+│  │  │  • foscam://images/recent  │  │  │
+│  │  │  • foscam://notifications  │  │  │
+│  │  └────────────────────────────┘  │  │
+│  └──────────────┬───────────────────┘  │
+└─────────────────┼────────────────────────┘
+                  │
+                  │ MCP Protocol (stdio)
+                  │
+                  ↓
+         ┌────────────────────┐
+         │  GitHub Copilot    │
+         │      Chat          │
+         │                    │
+         │  Natural Language  │
+         │  Interface         │
+         └────────────────────┘
+                  ↑
+                  │
+                  │ User Queries
+                  │
+         ┌────────────────────┐
+         │   User / IDE       │
+         └────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════
+
+EXAMPLE INTERACTIONS:
+
+  User: "Muéstrame las últimas imágenes de cam001"
+    ↓
+  Copilot: [Calls get_recent_images with camera_id filter]
+    ↓
+  Service 3: Returns filtered images with metadata
+    ↓
+  Copilot: Displays formatted response to user
+
+  User: "¿Ha habido alguna alerta hoy?"
+    ↓
+  Copilot: [Calls get_recent_images and analyzes alerts]
+    ↓
+  Service 3: Returns images with analysis data
+    ↓
+  Copilot: Summarizes alerts for user
+
+  User: "Envía una notificación de prueba"
+    ↓
+  Copilot: [Calls send_notification]
+    ↓
+  Service 3: Creates and stores notification
+    ↓
+  Copilot: Confirms notification sent
+
+═══════════════════════════════════════════════════════════════════════
+
+DEPLOYMENT MODES:
+
+  Production (Cloud Run):
+    • FastAPI mode: python -m app.main
+    • Exposes REST API endpoints
+    • Handles image processing events
+    • Sends notifications
+
+  Development (Local with Copilot):
+    • MCP mode: python -m app.main --mcp
+    • Exposes MCP protocol via stdio
+    • Integrates with GitHub Copilot Chat
+    • Enables natural language queries
+
+═══════════════════════════════════════════════════════════════════════
