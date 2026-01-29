@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "foscam-notifier": {
+      "command": "python",
+      "args": [
+        "-m",
+        "app.main",
+        "--mcp"
+      ],
+      "cwd": "/absolute/path/to/services/service3-notifier",
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/services/service3-notifier"
+      }
+    }
+  }
+}
